@@ -1,4 +1,8 @@
 #ssh root#(ip)
+#权限打开,进入vim编辑模式
+cat /etc/ssh/sshd_config
+#PermitRootLogin yes
+#PasswordAuthentication yes   确认这两个打开
 
 
 
@@ -31,6 +35,17 @@ connmanctl> [ 4663.127142] [WARNING][BB][halbb_get_fw_ra_rpt]Error macid = 0!!
 Connected wifi_9cf4758c4a59_5a54455f343231424436_managed_psk
 connmanctl> quit
 
+RK3568:/# ifconfig
+
+wlan0     Link encap:Ethernet  HWaddr 9C:F4:75:8C:4A:59
+          inet addr:192.168.0.110  Bcast:192.168.0.255  Mask:255.255.255.0
+          inet6 addr: 2408:8462:1210:1ab1:9ef4:75ff:fe8c:4a59/64 Scope:Global
+          inet6 addr: fe80::9ef4:75ff:fe8c:4a59/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:141 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:87534 (85.4 KiB)  TX bytes:11777 (11.5 KiB)
 
 
 
