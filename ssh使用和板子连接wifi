@@ -1,0 +1,57 @@
+#ssh root#(ip)
+
+
+
+
+#MobaXtrem UART 板子
+agent on
+sh: agent: command not found
+
+root@ATK-DLRK3568:/# connmanctl
+Error getting VPN connections: The name net.connman.vpn was not provided by any connmanctl> enable wifi
+
+connmanctl> scan wifi
+
+connmanctl> services        
+#ZTE_421BD6           wifi_9cf4758c4a59_5a54455f343231424436_managed_psk
+                         wifi_9cf4758c4a59_hidden_managed_psk
+
+connmanctl> agent on
+
+Agent registered
+connmanctl> connect wifi_9cf4758c4a59_5a54455f343231424436_managed_psk
+
+Agent RequestInput wifi_9cf4758c4a59_5a54455f343231424436_managed_psk
+  Passphrase = [ Type=psk, Requirement=mandatory, Alternates=[ WPS ] ]
+  WPS = [ Type=wpspin, Requirement=alternate ]
+Passphrase? 1234567890
+connmanctl> [ 4663.127142] [WARNING][BB][halbb_get_fw_ra_rpt]Error macid = 0!!
+[ 4663.127321] [WARNING][BB][halbb_get_fw_ra_rpt]Error macid = 0!!
+[ 4663.167632] IPv6: ADDRCONF(NETDEV_CHANGE): wlan0: link becomes ready
+Connected wifi_9cf4758c4a59_5a54455f343231424436_managed_psk
+connmanctl> quit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
