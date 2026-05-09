@@ -1,0 +1,52 @@
+
+
+#每次使用都需要先在板子挂载
+
+# 查看当前挂载情况
+df -h | grep nfs
+root@ATK-DLRK3568:/# ls /mnt/nfs
+root@ATK-DLRK3568:/# mount -t nfs -o nfsvers=3,nolock 192.168.0.148:/home/alientek/nfs /mnt/nfs
+root@ATK-DLRK3568:/# ls /mnt/nfs
+vscode-server-linux-arm64.tar.gz  yinshipin_NEW
+
+
+# 复制 /mnt/nfs/yinshipin/01 到 /home/ 目录下
+cp -r /mnt/nfs/yinshipin /home/
+
+
+
+
+
+1. $(CROSS_COMPILE) 是什么意思？
+这是一个变量占位符。
+
+在 Linux 驱动和嵌入式开发中，我们通常把编译器的“前缀”存入这个变量。
+
+如果不填：默认使用你 Ubuntu 自带的编译器（通常是 g++），编出来的程序是给 Intel/AMD 电脑跑的（x86_64 架构）。
+
+如果填了 aarch64-linux-gnu-：Makefile 里的 $(CROSS_COMPILE)g++ 就会变成 aarch64-linux-gnu-g++。
+
+核心逻辑：RK3568 是 ARM 架构，电脑是 x86 架构。你必须用“交叉编译器”编出来的程序，板子才能运行。
+
+
+2. -I./inc 为什么这样写？
+这个 -I 是 Include 的缩写。
+
+编译器默认只会在标准路径（比如 /usr/include）找头文件。
+
+你的 .h 文件在 inc 文件夹里，编译器不认识。
+
+-I./inc 就是告诉编译器：“嘿，如果你在代码里看到 #include "xxx.h" 找不到了，记得去当前目录下的 inc 文件夹里找找。”
+
+你看到的源码写法：INCLUDES = -I$(DIR_INC) 本质是一样的，只是它把路径套在变量里，显得更专业、更容易管理。
+
+
+
+
+
+
+
+
+
+
+
