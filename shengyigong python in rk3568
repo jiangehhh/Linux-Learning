@@ -21,6 +21,21 @@ Linux ATK-DLRK3568 4.19.232 #1 SMP Wed Jan 15 16:36:58 CST 2025 aarch64 GNU/Linu
 
 
 
+root@ATK-DLRK3568:/mnt/nfs/shengyigong# python3 client_demo.py
+正在连接到 PC 平台 192.168.0.105:8000...
+连接成功！等待接收数据...
+
+^CTraceback (most recent call last):
+  File "client_demo.py", line 57, in <module>
+    start_client()
+  File "client_demo.py", line 19, in start_client
+    response = client.recv(1024).decode('utf-8')
+KeyboardInterrupt
+
+root@ATK-DLRK3568:/mnt/nfs/shengyigong#
+
+
+
 
 
 
