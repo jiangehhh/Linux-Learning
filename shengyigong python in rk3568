@@ -1,0 +1,129 @@
+#板子
+
+uname -a 看看系统内核信息。
+#如果是一个只有几百 MB 的 Buildroot 系统 Ubuntu/Debian 镜像，这样你才能顺利使用 python3 和 socket 库。
+
+root@ATK-DLRK3568:/# which python3
+/usr/bin/python3
+
+一旦有了 pip，就可以在板子上安装你需要的库了：
+python3 -m pip install pygame （如果你用 Pygame 做游戏）
+root@ATK-DLRK3568:/# python3 -m pip install pygame
+Collecting pygame
+  Downloading pygame-2.6.1-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (13.6 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 13.6/13.6 MB 24.1 kB/s eta 0:00:00
+Installing collected packages: pygame
+Successfully installed pygame-2.6.1
+
+
+root@ATK-DLRK3568:/# uname -a
+Linux ATK-DLRK3568 4.19.232 #1 SMP Wed Jan 15 16:36:58 CST 2025 aarch64 GNU/Linux
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#windows
+安装打包工具：python -m pip install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+在运行打包之前，请确保你的 Windows 环境已经安装了 PyQt5（因为你的 bridge.py 用到了它）。
+
+安装依赖：在终端输入并回车：
+python -m pip install PyQt5
+
+
+手动触发打包：python -m PyInstaller python_demo.spec
+
+E:\zhengjian_03>python -m PyInstaller python_demo.spec
+365 INFO: PyInstaller: 6.20.0, contrib hooks: 2026.5
+365 INFO: Python: 3.14.5
+396 INFO: Platform: Windows-10-10.0.19045-SP0
+397 INFO: Python environment: C:\Users\jiange\AppData\Local\Python\pythoncore-3.14-64
+409 INFO: Module search paths (PYTHONPATH):
+['E:\\zhengjian_03',
+ 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\python314.zip',
+ 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs',
+ 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib',
+ 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64',
+ 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages',
+ 'E:\\zhengjian_03']
+822 INFO: checking Analysis
+822 INFO: Building Analysis because Analysis-00.toc is non existent
+822 INFO: Looking for Python shared library...
+822 INFO: Using Python shared library: C:\Users\jiange\AppData\Local\Python\pythoncore-3.14-64\python314.dll
+823 INFO: Running Analysis Analysis-00.toc
+823 INFO: Target bytecode optimization level: 0
+823 INFO: Initializing module dependency graph...
+833 INFO: Initializing module graph hook caches...
+869 INFO: Analyzing modules for base_library.zip ...
+2434 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+2936 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+5233 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+5385 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+8661 INFO: Caching module dependency graph...
+8695 INFO: Analyzing E:\zhengjian_03\bridge.py
+8699 INFO: Processing standard module hook 'hook-PyQt5.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+10713 INFO: Processing standard module hook 'hook-PyQt5.QtWidgets.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+15160 INFO: Processing standard module hook 'hook-PyQt5.QtCore.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+19610 INFO: Processing standard module hook 'hook-PyQt5.QtGui.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+37638 INFO: Processing module hooks (post-graph stage)...
+37642 WARNING: Hidden import "sip" not found!
+37706 INFO: Performing binary vs. data reclassification (97 entries)
+38486 INFO: Looking for ctypes DLLs
+38491 INFO: Analyzing run-time hooks ...
+38493 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+38496 INFO: Including run-time hook 'pyi_rth_pyqt5.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+38500 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+38503 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+38506 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+38514 INFO: Creating base_library.zip...
+38535 INFO: Looking for dynamic libraries
+38686 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyQt5\\Qt5\\bin']
+38687 INFO: Extra DLL search directories (PATH): ['C:\\Users\\jiange\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyQt5\\Qt5\\bin']
+39421 INFO: Warnings written to E:\zhengjian_03\build\python_demo\warn-python_demo.txt
+39437 INFO: Graph cross-reference written to E:\zhengjian_03\build\python_demo\xref-python_demo.html
+39458 INFO: checking PYZ
+39459 INFO: Building PYZ because PYZ-00.toc is non existent
+39459 INFO: Building PYZ (ZlibArchive) E:\zhengjian_03\build\python_demo\PYZ-00.pyz
+39563 INFO: Building PYZ (ZlibArchive) E:\zhengjian_03\build\python_demo\PYZ-00.pyz completed successfully.
+39591 INFO: checking PKG
+39591 INFO: Building PKG because PKG-00.toc is non existent
+39591 INFO: Building PKG (CArchive) python_demo.pkg
+39612 INFO: Building PKG (CArchive) python_demo.pkg completed successfully.
+39613 INFO: Bootloader C:\Users\jiange\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+39613 INFO: checking EXE
+39613 INFO: Building EXE because EXE-00.toc is non existent
+39614 INFO: Building EXE from EXE-00.toc
+39614 INFO: Copying bootloader EXE to E:\zhengjian_03\build\python_demo\python_demo.exe
+39709 INFO: Copying icon to EXE
+39763 INFO: Copying 0 resources to EXE
+39764 INFO: Embedding manifest in EXE
+39812 INFO: Appending PKG archive to EXE
+39864 INFO: Fixing EXE headers
+40176 INFO: Building EXE from EXE-00.toc completed successfully.
+40178 INFO: checking COLLECT
+40178 INFO: Building COLLECT because COLLECT-00.toc is non existent
+40179 INFO: Building COLLECT COLLECT-00.toc
+40466 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+40470 INFO: Build complete! The results are available in: E:\zhengjian_03\dist
+
+
+
+
+
+
+
+
+
+
+
