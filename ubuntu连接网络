@@ -1,0 +1,10 @@
+# 1. 强行启动最底层的端口映射进程（如果提示已运行不用管它）
+sudo rpcbind
+
+# 2. 直接绕过内核服务，用传统的内核维护脚本生拉：
+sudo /usr/sbin/exportfs -r
+sudo /usr/sbin/rpc.nfsd 8
+sudo /usr/sbin/rpc.mountd
+
+#验证成功
+sudo rpcinfo -p | grep nfs
