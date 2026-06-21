@@ -6,7 +6,7 @@
 
 基于多模态异构融合的边缘 RGB-D 视觉分析与流媒体网关系统
 项目描述： 基于 RK3568 平台构建多模态边缘计算网关，融合 2D 视觉与 dToF 深度传感技术，并打通底层数据采集、硬件 AR 渲染至标准安防协议推流的全链路。
-技术栈： C/C++, Linux, V4L2, RKNN (YOLO), OpenGL, FFmpeg, GStreamer, GB28181/ONVIF
+技术栈： C/C++, Linux, V4L2, RKNN (YOLO), OpenGL ES, FFmpeg, GStreamer, GB28181/ONVIF
 工作内容：
 
 基于 C++ 与多线程技术重构音视频网络底座，设计并实现带有互斥锁同步的 RingBuffer 环形队列，保障异构并发数据的安全分发。
@@ -33,7 +33,7 @@
 
 
 
-基于RK3568的VL53L8CX深度感知驱动适配与RGB采集链路构建化
+基于RK3568的VL53L8CX深度感知驱动适配与RGB采集链路构建
 项目描述： 基于 RK3568 平台完成 VL53L8CX 深度传感器接入及 RGB 摄像头采集链路构建，实现设备树配置、I2C 通信、V4L2 视频采集及软硬件协同控制。
 技术栈： Linux C, I2C,GPIO， EXTI, Device Tree, Media Controller, v4l2-ctl
 工作内容：
