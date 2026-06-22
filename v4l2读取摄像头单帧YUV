@@ -1,0 +1,140 @@
+
+
+先用 SSH 登录到你的正点原子 RK3568 开发板，插上你的 USB 摄像头，并在终端输入以下命令：
+v4l2-ctl --list-devices
+
+以及查询摄像头支持的格式：
+v4l2-ctl -d /dev/video0 --list-formats-ext
+(注：正点原子的板子，USB 摄像头通常挂载在 /dev/video0 或 /dev/videoX 上。你需要确认它支持 YUYV 还是 MJPEG 格式，我们下面的代码默认先用最普遍的 YUYV 抓取)。
+
+
+
+
+
+root@ATK-DLRK3568:~# v4l2-ctl --list-devices
+rkisp-statistics (platform: rkisp):
+        /dev/video7
+        /dev/video8
+
+rkisp_mainpath (platform:rkisp-vir0):
+        /dev/video0
+        /dev/video1
+        /dev/video2
+        /dev/video3
+        /dev/video4
+        /dev/video5
+        /dev/video6
+        /dev/media0
+
+root@ATK-DLRK3568:~# v4l2-ctl -d /dev/video0 --list-formats-ext
+ioctl: VIDIOC_ENUM_FMT
+        Type: Video Capture Multiplanar
+
+        [0]: 'UYVY' (UYVY 4:2:2)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [1]: '422P' (Planar YUV 4:2:2)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [2]: 'NV16' (Y/CbCr 4:2:2)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [3]: 'NV61' (Y/CrCb 4:2:2)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [4]: 'YM16' (Planar YUV 4:2:2 (N-C))
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [5]: 'NV21' (Y/CrCb 4:2:0)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [6]: 'NV12' (Y/CbCr 4:2:0)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [7]: 'NM21' (Y/CrCb 4:2:0 (N-C))
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [8]: 'NM12' (Y/CbCr 4:2:0 (N-C))
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [9]: 'YU12' (Planar YUV 4:2:0)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [10]: 'YM24' (Planar YUV 4:4:4 (N-C))
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [11]: 'RGGB' (8-bit Bayer RGRG/GBGB)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [12]: 'GRBG' (8-bit Bayer GRGR/BGBG)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [13]: 'GBRG' (8-bit Bayer GBGB/RGRG)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [14]: 'BA81' (8-bit Bayer BGBG/GRGR)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [15]: 'RG10' (10-bit Bayer RGRG/GBGB)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [16]: 'BA10' (10-bit Bayer GRGR/BGBG)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [17]: 'GB10' (10-bit Bayer GBGB/RGRG)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [18]: 'BG10' (10-bit Bayer BGBG/GRGR)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [19]: 'RG12' (12-bit Bayer RGRG/GBGB)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [20]: 'BA12' (12-bit Bayer GRGR/BGBG)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [21]: 'GB12' (12-bit Bayer GBGB/RGRG)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+        [22]: 'BG12' (12-bit Bayer BGBG/GRGR)
+                Size: Stepwise 32x16 - 3840x2160 with step 8/8
+
+
+
+
+
+
+你用的不是普通 USB 摄像头，而是板载的 MIPI 摄像头！
+你看输出的 rkisp_mainpath (platform:rkisp-vir0)，这说明 /dev/video0 是经过瑞芯微 ISP（图像信号处理器）调优后输出的视频流。这直接呼应了你简历里写的“利用 media-ctl 构建拓扑并调试 ISP”！含金量比普通 USB 免驱摄像头高出好几个档次。
+核心大坑：它使用的是“多平面 API (Multiplanar)”！
+注意看你打印的这一行：Type: Video Capture Multiplanar。
+普通的 V4L2 代码（也就是我上一条回复里的骨架）用的是 V4L2_BUF_TYPE_VIDEO_CAPTURE，如果直接跑在你的板子上，ioctl 会立刻报错 Invalid argument。你的板子要求必须使用专门针对复杂硬件设计的 V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE。
+完美的数据格式：NV12
+看你的列表第 [6] 项：'NV12' (Y/CbCr 4:2:0)。
+NV12 是嵌入式开发里的“黄金格式”。接下来的 RK_MPP 硬件编码器和 YOLO (RKNN)，最喜欢吃的就是 NV12 格式的数据。我们就选它了！
+
+既然硬件定下来了，我们立刻修改代码，使用高级的 MPLANE (多平面) 接口来抓取 NV12 图像。
+
+
+//#mian.cpp
+#include "v4l2_capture.h"
+#include <unistd.h>
+int main() {
+    V4L2Capture camera;
+    camera.Init("/dev/video0", 640, 480);
+    camera.StartStream();
+    
+    sleep(3); // 运行 3 秒钟，确保抓图代码执行
+    
+    camera.StopStream();
+    return 0;
+}
+
+
+操作步骤：
+
+交叉编译并在板子上运行这个程序。
+运行完毕后，在板子上用 ls 看一下，是否生成了一个 test_frame.yuv 文件。
+把这个 test_frame.yuv 拷贝到你的 Windows 电脑上。
+下载一个叫 YUV Player 的小软件（或者用 FFmpeg 命令行），设置格式为 NV12，分辨率 640x480，打开它。
+
+
+
+root@ATK-DLRK3568:/home/yinshipin/01# cd /mnt/nfs/yinshipin/01
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/01# ls
+inc  ln_server_demo  Makefile  obj  src  third_lib
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/01# ./ln_server_demo
+✅ 成功保存一张 NV12 格式照片到 test_frame.yuv，大小: 460800 字节
+free(): double free detected in tcache 2
+Aborted
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/01#
+
+
+
+
+使用ffplay播放.yuv文件：假设你的.yuv文件名为test_frame.yuv，分辨率为640x480（你需要根据实际分辨率调整），像素格式为NV12，可以使用以下命令：
+ffplay -f rawvideo -pixel_format nv12 -video_size 640x480 test_frame.yuv
+
+
+
+
+
+
