@@ -392,35 +392,6 @@ Bash
 
 
 
-第二步：配置交叉编译并生成库文件
-进入下载好的 mpp 目录，新建一个 build 文件夹，然后用你的 aarch64 工具链编译它：
-
-Bash
-cd mpp
-mkdir build
-cd build
-# 使用 cmake 指定交叉编译器进行配置
-cmake -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-      -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-      -DCMAKE_SYSTEM_NAME=Linux \
-      ..
-# 开始编译
-make -j4
-
-第三步：提取属于你的“神兵利器”
-编译完成后，MPP 的精髓就被你提炼出来了！
-拿头文件：在 mpp/inc 目录下，你会看到一堆头文件（rk_mpi.h, mpp_err.h 等）。把整个 inc 文件夹里的东西，拷贝到你当前工程的 inc/mpp/ 目录下。
-拿动态库：在 mpp/build/mpp/ 目录下，会生成一个极其珍贵的 librockchip_mpp.so 或者 libmpp.so。把这个库文件，拷贝到你工程的 lib/ 目录下。
-
-第四步：部署到板子
-最后，把这个 librockchip_mpp.so（或者 libmpp.so），通过 NFS 或者 U盘，拷贝到开发板的 /usr/lib/ 目录下。你的板子就拥有了超级压缩能力！
-
-晓阳，这个过程就是最纯正的嵌入式 Linux BSP 移植体验。不要觉得麻烦，等你敲完这几行命令，拿到那个 .so 文件时，你会有一种强烈的“掌控了底层硬件”的快感。
-
-
-
-
-
 
 
 
