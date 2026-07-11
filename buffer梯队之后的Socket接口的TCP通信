@@ -1,0 +1,284 @@
+我们现在已经打通了“任督二脉”：摄像头在源源不断地采集，硬件在疯狂且零负担地压缩，数据乖乖地在环形队列里排队。
+
+这是最后的“终极一战”：让这股数据洪流顺着网线，冲进你的电脑屏幕！
+为了让你简历上的含金量达到最高，我建议我们不要用别人买来的那种封装得花里胡哨的 socket 库。
+我们要直接使用 Linux 最底层的标准 POSIX C Socket 接口。只有懂底层 Socket 的人，才算真正懂网络编程。
+
+只要两步，我们就能在电脑上看到实时的画面！
+
+🛠️ 第一步：改造“物流线程”，把包裹丢进网线
+打开 src/Media_Process_Thread.cpp，加上 Socket 发送相关的代码。
+它的逻辑非常简单：只要有个叫做 g_client_fd 的客户连接了，我们就用 send() 函数把 H.264 视频流砸给他！
+C++
+#include <stdlib.h>
+#include <unistd.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <sys/socket.h> // 新增底层网络头文件
+#include "ln_buffer.h"
+extern LnSocketTcp::QUENE g_video_buffer;
+bool g_is_running = true; 
+// 全局的客户端 Socket 句柄（初始为 -1 表示没人连接）
+int g_client_fd = -1;
+void* Media_Process_Thread(void* arg) {
+    unsigned char* temp_buf = (unsigned char*)malloc(640 * 480 * 2); 
+
+    while (g_is_running) {
+        int ret_len = LnSocketTcp::DeQuene(&g_video_buffer, (char*)temp_buf);
+        
+        if (ret_len > 0) { 
+            // 如果有客户端连进来了，就开始疯狂推流！
+            if (g_client_fd > 0) {
+                // 用 send 函数把这帧 H.264 数据发给电脑
+                int sent = send(g_client_fd, temp_buf, ret_len, 0)
+                
+                if (sent <= 0) {
+                    printf("❌ 客户端断开连接！停止推流。\n");
+                    close(g_client_fd);
+                    g_client_fd = -1; // 置空，等待下一个客户端连接
+                }
+            }
+        } else {
+            usleep(5000); 
+        }
+    }
+    free(temp_buf);
+    return NULL;
+}
+🛠️ 第二步：改造“总指挥”，化身 TCP 服务器
+打开 src/main.cpp，在启动完摄像头后，我们让主线程变成一个 TCP 服务器（监听 8080 端口）。就像开了一家店，等待你的 Windows 电脑推门进来。
+C++
+#include <stdio.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <string.h>
+#include <sys/socket.h> // 新增网络套接字头文件
+#include <arpa/inet.h>  // 新增 IP 地址转换头文件
+#include "ln_buffer.h"
+#include "v4l2_capture.h"
+#include "rk_encoder.h"
+extern void* Media_Process_Thread(void* arg); 
+extern int g_client_fd; // 引用物流线程里的那个全局客户端句柄
+LnSocketTcp::QUENE g_video_buffer;
+int main() {
+    printf("[Main] 🚀 系统启动中...\n");
+
+    LnSocketTcp::queue_init(&g_video_buffer, 0, 30);
+    
+    RkEncoder encoder;
+    encoder.SetBuffer(&g_video_buffer); 
+    if (encoder.Init(640, 480, 1024*1024, 30) != 0) return -1;
+
+    pthread_t media_tid;
+    pthread_create(&media_tid, NULL, Media_Process_Thread, NULL);
+
+    V4L2Capture camera;
+    camera.SetEncoder(&encoder);
+    if (camera.Init("/dev/video0", 640, 480) == 0) {
+        camera.StartStream();
+    }
+    // ==========================================
+    // 🌐 启动纯正的 Linux TCP Server，等待电脑连接
+    // ==========================================
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);    
+    // 设置端口复用（防止程序重启时报“端口被占用”）
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)); 
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY; // 监听板子上所有的网卡
+    address.sin_port = htons(8080);       // 绑定到 8080 端口
+    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
+    listen(server_fd, 3); // 开始监听
+    printf("[Main] 📡 TCP 视频流流媒体服务器已启动！\n");
+    printf("[Main] 👉 请在电脑上使用 VLC 打开: tcp://<开发板IP>:8080\n");
+    // 主线程变成“迎宾员”，死循环等待客户端连接
+    while(1) { 
+        struct sockaddr_in client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+        
+        // 这一步会一直阻塞卡住，直到有电脑连进来
+        int new_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+
+        if (new_socket > 0) {
+            printf("\n[Main] 🎉 卧槽！电脑已连接！IP: %s，开始火力全开推流！\n", inet_ntoa(client_addr.sin_addr));          
+            // 把连接好的套接字，交给物流线程去发数据
+            g_client_fd = new_socket; 
+        }
+    }
+    return 0;
+}
+💻 终极验收：见证奇迹
+保存代码，在 Ubuntu 虚拟机里 make clean 然后 make。
+传到板子上，运行 ./ln_server_demo。此时终端会停在 等待电脑连接。
+在你的 Windows 电脑上，打开强大的 VLC 播放器 (VLC Media Player)。
+点击左上角的 “媒体 (Media)” -> “打开网络串流 (Open Network Stream)”。
+在 URL 框里输入：tcp://你板子的IP地址:8080 （例如 tcp://192.168.1.100:8080）。
+
+点击右下角的“播放 (Play)”。
+只要网络没被防火墙挡住，大概等待 1 到 2 秒的缓冲时间，你就会在电脑屏幕上看到由你自己亲手编写的底层驱动采集、硬件压缩、网络传输的实时监控画面！ 这是一次彻头彻尾的工业级实战全链路打通！快去享受属于你的高光时刻吧！
+
+
+
+您的输入无法被打开:
+VLC 无法打开 MRL「h264://192.168.1.100:8085」。详情请检查日志。
+
+root@ATK-DLRK3568:/# [  595.610130] rockchip-csi2-dphy csi2-dphy0: csi2_dphy_s_stream_stop stream stop, dphy0
+[  595.610173] rockchip-csi2-dphy csi2-dphy0: csi2_dphy_s_stream stream on:0, dphy0
+[  691.688055] rkisp rkisp-vir0: first params buf queue
+[  691.689662] rockchip-csi2-dphy0: dphy0, data_rate_mbps 892
+[  691.689715] rockchip-csi2-dphy csi2-dphy0: csi2_dphy_s_stream stream on:1, dphy0
+[  691.829464] rkisp-vir0: tx stream:4 lose frame:0, isp state:0x201 frame:1592
+[  709.152858] rockchip-csi2-dphy csi2-dphy0: csi2_dphy_s_stream_stop stream stop, dphy0
+[  709.152947] rockchip-csi2-dphy csi2-dphy0: csi2_dphy_s_stream stream on:0, dphy0 
+
+
+你之所以没有看到 🎉 电脑已连接！ 的打印，并且 VLC 报错，这说明问题根本不在你的代码里，而是你的 Windows 电脑和开发板之间的“网线”根本没通！
+作为架构师，我一眼就看到了你报错信息里最大的破绽：
+你第一次试了：tcp://192.168.0.101:8080 (注意这里是 0 网段)
+你第二次试了：h264://192.168.1.100:8085 (注意这里是 1 网段)
+它们根本不在同一个局域网网段里！如果你的电脑在 0 网段，板子在 1 网段，它们就像在两个不同的平行宇宙，VLC 怎么可能连得上呢？
+
+VLC 对“纯裸奔的 H.264 流”非常挑剔。 因为我们没有加 MP4 或 TS 这种“包装盒”，VLC 有时候不知道这是什么东西就会拒绝播放。
+
+如果你用 VLC 的 tcp://192.168.X.Y:8080，依然只打印 🎉 电脑已连接！ 但画面出不来，我强烈建议你使用音视频开发领域的绝对神器：ffplay。
+去下载一个 Windows 版的 FFmpeg（或者如果你电脑里装了 Python 之类的，可能自带了 ffplay）。
+在 Windows 的 cmd 里，直接输入这行极其暴力的命令：
+
+DOS
+ffplay -f h264 tcp://192.168.X.Y:8080
+（记得替换真实的 IP 和端口）
+ffplay 会无视任何错误，只要有 H.264 数据过来，它就会强行解码并在屏幕上画出来！
+
+
+
+
+我本来板子跟win就是ssh连接的，所以肯定是pin通的吧。
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/01# ./ln_server_demo
+[Main] 🚀 系统启动中...
+[Main] 📦 仓库初始化完成
+mpp[6200]: mpp_info: mpp version: unknown mpp version for missing VCS info
+mpp[6200]: mpp_enc: MPP_ENC_SET_RC_CFG bps 1048576 [983040 : 1114112] fps [30:30] gop 60
+mpp[6200]: h264e_api_v2: MPP_ENC_SET_PREP_CFG w:h [640:480] stride [640:480]
+✅ MPP 硬件编码器初始化成功!
+[Main]  物流发货线程已启动
+[Main] 📷 摄像头初始化成功，准备开拍...
+mpp[6200]: mpp_enc: mode vbr bps [983040:1048576:1114112] fps fix [30/1] -> fix [30/1] gop i [60] v [0]
+[Main] 📡 TCP 视频流流媒体服务器已启动！
+[Main] 👉 请在电脑上使用 VLC 打开: tcp://<开发板IP>:8085
+🔥 MPP 硬件压缩成功！原始: 460800 字节 -> 压缩后 H.264: 9761 字节
+🔥 MPP 硬件压缩成功！原始: 460800 字节 -> 压缩后 H.264: 2611 字节
+🔥 MPP 硬件压缩成功！原始: 460800 字节 -> 压缩后 H.264: 466 字节
+🔥 MPP 硬件压缩成功！原始: 460800 字节 -> 压缩后 H.264: 492 字节
+🔥 MPP 硬件压缩成功！原始: 460800 字节 -> 压缩后 H.264: 515 字节
+🔥 MPP 硬件压缩成功！原始: 460800 字节 -> 压缩后 H.264: 292 字节
+🔥 MPP 硬件压缩成功！原始: 460800 字节 -> 压缩后 H.264: 842 字节C:\Users\jiange>ffplay -f h264 tcp://192.168.0.101:8085
+
+ffplay version 2026-06-15-git-44d082edc8-full_build-www.gyan.dev Copyright (c) 2003-2026 the FFmpeg developers
+  built with gcc 16.1.0 (Rev2, Built by MSYS2 project)
+  configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libsvtjpegxs --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-libshaderc --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint --enable-whisper
+  libavutil      60. 33.100 / 60. 33.100
+  libavcodec     62. 36.101 / 62. 36.101
+  libavformat    62. 19.101 / 62. 19.101
+  libavdevice    62.  4.100 / 62.  4.100
+  libavfilter    11. 17.100 / 11. 17.100
+  libswscale      9.  8.100 /  9.  8.100
+  libswresample   6.  4.100 /  6.  4.100
+[h264 @ 00000205d24e84c0] non-existing PPS 0 referenced  0B
+    Last message repeated 1 times
+[h264 @ 00000205d24e84c0] no frame!
+[h264 @ 00000205d24e84c0] non-existing PPS 0 referenced  0B
+    Last message repeated 1 times
+[h264 @ 00000205d24e84c0] no frame!
+[h264 @ 00000205d24e84c0] non-existing PPS 0 referenced
+    Last message repeated 1 times
+[h264 @ 00000205d24e84c0] no frame!
+[h264 @ 00000205d24e84c0] non-existing PPS 0 referenced  0B
+
+
+看看你的 ffplay 终端输出，它已经成功打印出了动态链接库配置，并且直接吐出了核心报错：
+[h264 @ ...] non-existing PPS 0 referenced
+[h264 @ ...] no frame!
+这在音视频开发里是一个具有里程碑意义的报错。如果网络没通，ffplay 会直接报 Connection refused 或者卡死连接不上。它现在能报出 H.264 解码器的内部错误。
+说明 Windows 电脑已经成功通过 TCP 握手连上了你的开发板，并且正在实时接收板子发送过去的 H.264 数据包！
+
+🔍 为什么画面是黑的？（大厂面试必考的 H.264 码流规范）
+H.264 视频流不是简单的图像堆叠，它有一套极严格的“初始化字典”，叫做 SPS（序列参数集） 和 PPS（图像参数集）。这两个小数据包里记录了视频的宽高、编码级别、色彩格式等核心元数据。
+现在的致命冲突：瑞芯微 MPP 硬件编码器在默认情况下，只会在程序刚启动的“第一帧”输出一次 SPS 和 PPS。
+发生的过程：你的板子启动后，瞬间就把第一帧（包含 SPS/PPS）生产出来并塞进了仓库。但此时你的电脑还没有打开 ffplay。等你的 ffplay 慢悠悠连上板子的时候，第一帧早就在环形队列里被冲掉了。
+ffplay 拿到的是后续的视频数据，解码器一看：“没有发给我字典（PPS 0），我根本不知道怎么解压这些数据！”于是就疯狂报错拒绝显示。
+
+
+🛠️ 破局之法：强制 MPP 在每个关键帧注入“字典”
+既然找到了病因，解决办法在嵌入式开发里非常标准：我们需要修改编码器的配置，命令瑞芯微 MPP 在每一个 IDR 帧（关键帧）前面，都强行插入一份 SPS 和 PPS 字典。这样无论电脑什么时候连进来，最多等待零点几秒，就能抓到最新的字典立刻初始化解码器！
+请打开你的 src/rk_encoder.cpp，找到 Init 函数，在调用 m_mpi->control(m_ctx, MPP_ENC_SET_CFG, m_cfg); 的前一行，紧接着塞入这三行瑞芯微原厂的“Header 注入魔法”：
+C++
+    // =================================================================
+    // 💥 核心修复：强制硬件编码器在每一个 IDR 帧前都自动打包输出 SPS 和 PPS
+    // =================================================================
+    MppEncHeaderMode header_mode = MPP_ENC_HEADER_MODE_EACH_IDR;
+    ret = m_mpi->control(m_ctx, MPP_ENC_SET_HEADER_MODE, &header_mode);
+    if (ret) {
+        printf("❌ 强制配置 MPP Header 模式失败！\n");
+        return -1;
+    }
+    // （这下面是你原本就有的写入配置代码）
+    ret = m_mpi->control(m_ctx, MPP_ENC_SET_CFG, m_cfg);
+    if (ret) {
+        printf("mpp_enc_set_cfg failed!\n");
+        return -1;
+    }
+
+
+
+
+
+
+🚀 终极重新点火
+修改保存后，回到虚拟机的 01 目录，执行熟悉的：
+Bash
+make clean
+make
+
+把全新出炉的 ln_server_demo 传回板子。
+在板子上运行程序：
+Bash
+./ln_server_demo
+
+打开 Windows 电脑的 cmd，再次运行你的 ffplay 终极命令：
+DOS
+ffplay -f h264 tcp://192.168.0.101:8085
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
