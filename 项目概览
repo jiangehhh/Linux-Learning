@@ -4,6 +4,36 @@
 
 
 
+基于RK3568的多模态边缘视觉感知系统
+
+项目描述
+
+基于RK3568平台构建边缘视觉感知系统，完成RGB摄像头与VL53L8CX dToF深度传感器采集链路搭建，实现视频流、距离场数据及AI推理结果的异步处理、多模态融合分析及边缘端实时传输，为智能视觉感知提供统一的软件框架。
+
+技术栈
+
+C/C++、Linux、RK3568、V4L2、MPP、FFmpeg、GStreamer、OpenGL ES、RKNN、YOLO、I2C、Device Tree、TCP/IP、pthread
+
+工作内容
+
+① 基于V4L2完成RGB摄像头视频采集，结合MPP建立硬件编解码链路，实现视频流实时获取与处理。
+
+② 基于Linux I2C子系统完成VL53L8CX dToF深度传感器接入，实现8×8距离矩阵实时采集、解析及用户态读取。
+
+③ 基于C++17设计线程安全RingBuffer缓存模块，采用生产者-消费者模型实现RGB视频流、距离矩阵及AI推理结果异步缓存与多线程同步。
+
+④ 基于TCP Socket实现RK3568与Windows上位机之间视频流及距离矩阵实时传输，为多模态数据可视化提供通信接口。
+
+⑤ 基于RKNN部署YOLO目标检测模型，结合ROI距离统计及双线性插值实现RGB-ToF融合分析，完成目标距离估计及空间占据感知。
+
+⑥ 基于OpenGL ES完成目标框、距离标签及距离热力图GPU实时渲染，实现边缘端OSD可视化显示。
+
+⑦ 基于FFmpeg、GStreamer完成视频流封装、Pipeline验证及流媒体处理，为后续网络推流功能提供基础。
+
+⑧ 完成Camera及VL53L8CX相关Device Tree配置与调试，熟悉Linux设备树及Media Controller框架。
+
+
+
 基于RK3568的多模态边缘视觉-距离场感知系统
 
 项目描述：
