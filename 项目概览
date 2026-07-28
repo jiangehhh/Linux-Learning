@@ -1,6 +1,12 @@
 
 
+根据我们这几个月一直聊的内容，我觉得剩下真正需要完成的是：
 
+✅ YOLO部署（RKNN跑通）
+✅ OpenGL ES完成OSD叠加（哪怕只是基础版本）
+✅ FFmpeg/GStreamer跑通Pipeline并能讲清楚
+✅ Device Tree完成Camera/ToF相关配置
+✅ Windows上位机联调（你的职责做到TCP把视频和ToF数据稳定传过去即可）
 
 
 
