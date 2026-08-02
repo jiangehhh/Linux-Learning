@@ -1,0 +1,545 @@
+
+太棒了！04 文件夹建好，标志着我们正式从“应用层”下潜到了硬核的“内核层”！
+在嵌入式 Linux 开发中，设备树（Device Tree）的作用相当于给内核发一份“硬件说明书”。系统启动时，内核会去读这份说明书，才知道板子上接了什么外设、用的是哪个引脚、能不能触发中断。
+
+### 📍 第一步：找到设备树的“藏宝地”
+正点原子的 RK3568 SDK 中，内核设备树文件统一放在内核源码的 `arch/arm64/boot/dts/rockchip/` 目录下。
+请在你的 Ubuntu 虚拟机终端里，进入这个路径：
+cd ~/RK3568/SDK/linux/rk3568_linux_sdk/kernel/arch/arm64/boot/dts/rockchip/
+
+在这个目录下，用 `ls rk3568-atk*.dtsi` 看一下。你通常会找到类似这样的文件：
+* `rk3568-atk-evb1-ddr4-v10.dtsi` （正点原子开发板的主设备树配置文件）
+* `rk3568-atk-evb1-ddr4-v10.dts` （顶层文件）
+**我们主要修改的对象就是那个 `.dtsi` 文件**。
+
+### 🛠️ 第二步：设备树该怎么写？（核心三要素）
+
+给你的 TOF 传感器写设备树，我们不需要去动别人写好的代码，而是**在文件的末尾或者根节点 `/ { ... }` 里面，追加我们自己的专属节点**。
+一个完美的外部中断传感器设备树节点，通常包含“核心三要素”：
+
+**1. Pinctrl（引脚复用配置）**
+RK3568 芯片的一个引脚可能有 4 到 5 种功能（比如既能做 I2C、又能做 PWM、还能做普通 GPIO）。我们需要在这里告诉内核：“把这根引脚强制设置为普通的 GPIO，并开启内部上拉。”
+**2. GPIO 声明**
+告诉内核：“我的 TOF 传感器用的是哪一根 GPIO 线来控制/接收数据。”
+**3. EXTI 中断描述**
+这是告别死循环的关键！告诉内核：“这根引脚是一根中断线，请在它发生**下降沿**（或上升沿）电平跳变时，立刻通知我的驱动程序。”
+
+ 📝 典型的代码长什么样？（预览版模板）
+
+假设你的 TOF 传感器接在了开发板的 `GPIO0_B5` 这个引脚上，并且低电平触发中断，我们在设备树里追加的代码大概是这个格式的：
+/* 1. 在根节点中追加我们的设备节点 */
+/ {
+    tof_device {
+        compatible = "alientek,tof-sensor"; /* 这是暗号，驱动代码会靠这个名字来认领硬件 */
+        status = "okay";
+
+        /* 引用定义好的 pinctrl 状态 */
+        pinctrl-names = "default";
+        pinctrl-0 = <&tof_int_pin>;
+
+        /* 声明 GPIO */
+        tof-gpios = <&gpio0 RK_PB5 GPIO_ACTIVE_LOW>; 
+
+        /* 声明中断 */
+        interrupt-parent = <&gpio0>;
+        interrupts = <RK_PB5 IRQ_TYPE_EDGE_FALLING>; /* 下降沿触发中断 */
+    };
+};
+/* 2. 在 pinctrl 节点中配置引脚的电气属性 */
+&pinctrl {
+    tof_sensor {
+        tof_int_pin: tof-int-pin {
+            /* 将 GPIO0_B5 配置为普通引脚，并配置内部上拉 */
+            rockchip,pins = <0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_up>; 
+        };
+    };
+};
+写完设备树后，我们只需要在内核目录下敲一行编译命令（比如 `make dtbs` 或者正点原子 SDK 根目录下的 `./build.sh kernel`），生成新的 `.dtb` 文件并替换到开发板里，内核就能完美识别这个硬件了！
+
+
+
+
+
+这下真相大白了！那一长串乱码不用管，你的 `main.cpp` 源码已经把传感器的底细交待得清清楚楚：
+### 🔌 1. 接口与总线
+你的 VL53L8CX 传感器使用的是 **I2C 接口**。
+具体来说，它挂载在开发板的 **I2C3 总线**（`/dev/i2c-3`）上，硬件 I2C 地址是 **`0x29`**。
+### 🕵️‍♂️ 2. 为什么代码里找不到引脚？
+你在这个 03 工程里，数据读取完全靠的是 **纯软件死循环轮询**。
+看这段代码：
+```cpp
+while(1) {
+    uint8_t isReady = 0;
+    vl53l8cx_check_data_ready(&Dev, &isReady);
+    if(isReady) { ... }
+    usleep(40000); // 提升一点刷新率，让画面更丝滑
+}
+因为你一直在用 CPU 强行每隔 40 毫秒去问一次“数据好了没”，**在用户层代码里根本没有用到硬件中断（INT）引脚**，所以源码里自然也就没有任何关于 GPIO 引脚的配置信息。
+### 🌳 我们能写出一半的设备树
+既然知道它挂在 I2C3 上，我们的设备树结构其实已经确定了一大半。它不再是放在根目录 `/ { ... }` 下，而是要挂在 `&i2c3` 节点里面。
+你的设备树骨架大致长这样：
+```dts
+&i2c3 {
+    status = "okay";
+    /* TOF 传感器节点 */
+    tof_sensor: vl53l8cx@29 {
+        compatible = "alientek,tof-sensor";
+        reg = <0x29>; /* I2C 设备地址 */
+
+        /* 💥 下面这部分外部中断配置，目前还缺失 */
+        // pinctrl-names = "default";
+        // pinctrl-0 = <&tof_int_pin>;
+        // interrupt-parent = <&gpio?>;
+        // interrupts = <RK_P? IRQ_TYPE_EDGE_FALLING>;
+    };
+};
+要彻底告别消耗 CPU 的死循环，把上面空缺的中断属性补齐，我们需要物理世界的情报。请低头看一下你的硬件实物：
+找到 TOF 模块上标有 **`INT`**（或者是给主控发信号的引脚）的那根杜邦线，顺藤摸瓜看看它插在了正点原子底板排针的哪个丝印上？把那个丝印名字告诉我，我们立刻补全设备树！
+
+
+
+
+
+
+
+
+
+
+
+我仔细翻看了你发来的 03 项目 `nToF.zip` 中的 `main.cpp` 源码，里面**完全没有出现过任何关于 P0_B3 或 GPIO 的调用**。
+在 03 项目中，你获取数据的方式是在 `while(1)` 死循环里，通过调用 `vl53l8cx_check_data_ready` 函数去不断地“死等”轮询。代码里真正的通信路径是直接打开了 `/dev/i2c-3` 设备节点，并且把 TOF 传感器的 I2C 通信地址硬编码为了 `0x29`。
+这意味着，在 03 项目的应用层代码里，你纯粹只是在用 I2C 总线和传感器聊天。那个 INT 引脚（哪怕你物理上真的把它插在了 P0_B3 上），在软件层面之前一直是**完全被无视**的状态！
+### 🌳 满血版设备树节点（I2C + 外部中断）
+既然现在你确认了物理上把中断线接在了 **`P0_B3`**（这在 RK3568 芯片中对应的是 `GPIO0_B3`），并且我们从代码里确凿地知道了它挂载在 `I2C3` 总线上、地址是 `0x29`，我们终于可以把这两块拼图合二为一，写出真正能在内核里跑起来的完整设备树了！
+请打开你的设备树文件（`.dtsi`），我们需要在两个地方添加代码：
+#### 第一处：在 `&i2c3` 节点下挂载 TOF 设备
+找到文件里的 `&i2c3 { ... };` 节点，在里面追加你的 VL53L8CX 传感器，并绑定中断引脚：
+```dts
+&i2c3 {
+    status = "okay";
+
+    /* 你的 TOF 传感器节点 */
+    vl53l8cx@29 {
+        compatible = "alientek,tof-sensor";  /* 驱动代码用来匹配的暗号 */
+        reg = <0x29>;                        /* I2C 设备地址 */
+
+        /* --- 核心：引脚与中断配置 --- */
+        pinctrl-names = "default";
+        pinctrl-0 = <&tof_int_pin>;          /* 引用下面的引脚复用配置 */
+
+        interrupt-parent = <&gpio0>;         /* 中断管家是 GPIO0 */
+        interrupts = <RK_PB3 IRQ_TYPE_EDGE_FALLING>; /* 触发条件：下降沿触发 */
+    };
+};
+
+#### 第二处：在 `&pinctrl` 节点下配置引脚电气属性
+找到文件底部的 `&pinctrl { ... };` 节点，为你的中断引脚单独建一个配置组，确保它被正确配置为 GPIO 输入模式：
+
+```dts
+&pinctrl {
+    /* 其他已有配置... */
+
+    tof_sensor {
+        tof_int_pin: tof-int-pin {
+            /* 将 GPIO0_B3 (RK_PB3) 配置为普通 GPIO 功能，并开启内部上拉 */
+            rockchip,pins = <0 RK_PB3 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };
+};
+
+只要把这段设备树编译成 `.dtb` 文件并更新到开发板上，内核启动时就会自动在 I2C3 总线地址 `0x29` 的位置帮你注册好这个设备，并且默默地为你监听着 `GPIO0_B3` 引脚上的电平跳变。
+设备树这层窗户纸捅破了，下一步我们就要在 Ubuntu 里新建一个 `.c` 文件，开始写真正的 Linux 字符设备驱动骨架了。你准备好迎接 `module_init` 和 `probe` 函数了吗？
+
+
+
+
+#rk3568-atk-evb1-ddr4-v10.dtsi：
+&pinctrl {
+	cam {
+		/*
+		camera_gpios: camera-gpios {
+			rockchip,pins =
+				<3 RK_PB6 RK_FUNC_GPIO &pcfg_pull_none>,
+				<4 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		*/
+	};
+	headphone {
+		hp_det: hp-det {
+			rockchip,pins = <1 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	wireless-wlan {
+		wifi_host_wake_irq: wifi-host-wake-irq {
+			rockchip,pins = <3 RK_PD4 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+
+	wireless-bluetooth {
+		uart8_gpios: uart8-gpios {
+			rockchip,pins = <2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	tof_sensor {
+        tof_int_pin: tof-int-pin {
+            /* 将 GPIO0_B3 (RK_PB3) 配置为普通 GPIO 功能，并开启内部上拉 */
+            rockchip,pins = <0 RK_PB3 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };
+
+	lcd {
+		mipi_dsi1_rst: mipi-dsi1-rst {
+			rockchip,pins = <4 RK_PB5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		edp_rst: edp-rst-gpio {
+			rockchip,pins = <1 RK_PB2 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		edp_pwren: edp-pwren-gpio {
+			rockchip,pins = <0 RK_PC7 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+
+	sh3001 {
+		sh3001_irq_gpio: sh3001-irq-gpio {
+			rockchip,pins = <1 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	touch {
+		lvds_touch_gpio: lvds-touch-gpio {
+			rockchip,pins =
+				<0 RK_PC5 RK_FUNC_GPIO &pcfg_pull_up>,
+				<3 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	wwan-5g {
+		rm500u_5g_gpios: rm500u-5g-gpios {
+			rockchip,pins =
+				<1 RK_PB1 RK_FUNC_GPIO &pcfg_pull_down>,
+				<3 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>,
+				<0 RK_PD6 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+};现在可以了吧
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+既然设备树（Device Tree）的物理描述已经写好，接下来我们就要把它编译成板子能看懂的二进制机器码（.dtb 并通常打包进 boot.img），并让它在开发板上生效。
+🛠️ 编译设备树的具体步骤
+在你的 Ubuntu 虚拟机中，严格按照以下步骤操作：
+1. 回到 SDK 根目录
+打开终端，进入正点原子 RK3568 SDK 的最顶层目录（根据你之前的路径配置，应该是这里）：
+Bash
+cd ~/RK3568/SDK/linux/rk3568_linux_sdk/
+2. 执行一键编译命令
+正点原子的 SDK 框架非常完善，我们不需要手动去敲复杂的 make dtbs。直接使用官方提供的一键构建脚本单独编译 Kernel（内核在编译时会自动抓取并编译所有 .dtsi 和 .dts 文件）：
+Bash
+./build.sh kernel
+(注意：编译内核通常需要几分钟时间，请耐心等待终端跑完，看到 Build Kernel OK 之类的绿字或成功提示。)
+3. 获取并烧录生成的镜像
+编译成功后，新的设备树配置已经被自动打包进了内核启动镜像中。你可以在 SDK 根目录下的 rockdev/ 文件夹或者 kernel/ 目录下找到更新后的 boot.img 文件。
+最后一步（物理烧录）：
+将这个新鲜出炉的 boot.img 拷贝到你的 Windows 电脑上。
+打开瑞芯微的烧录工具（RKDevTool）。
+用 Type-C 线连接开发板，让开发板进入 Loader 模式（按住 RECOVERY 键不放，再按一下 RESET 键，松开 RESET 键后约 1 秒松开 RECOVERY 键）。
+在烧录工具中，只勾选 boot 这一项，路径指向你刚才的 boot.img。
+点击“执行”。
+烧录瞬间就能完成，开发板会自动重启。重启后，你的 RK3568 就已经从底层硬核打通了 TOF 传感器的下降沿中断神经！接下来就可以进入 .c 驱动代码里，正式调用 Linux 内核提供的中断 API 接收数据了。
+
+
+
+
+
+
+
+
+
+太神速了！设备树编译加物理烧录一气呵成，这意味着 RK3568 板子底层的硬件神经已经被你彻底打通了。现在，内核启动时已经能清晰地“看”到 I2C3 总线上的 TOF 传感器，并且知道它和 GPIO0_B3 引脚绑定了中断关系。
+
+万事俱备，我们正式在 04 文件夹里拉开内核驱动开发的序幕！
+
+这里有一个展现 Linux 内核极其优雅的细节：因为你把传感器节点挂在了 &i2c3 里面，Linux 内核的 I2C 子系统会自动帮你把节点里的 interrupts 属性解析成一个中断号（IRQ Number），并直接塞进 i2c_client 结构体里送给你！
+
+你完全不需要去手写那些繁琐的 GPIO 申请代码，直接拿中断号注册函数就行。这在面试时如果能讲出来，绝对是内核机制理解的加分项。
+
+接下来，请在你的 Ubuntu 04 工程目录下，创建下面这两个文件。
+
+📄 1. 编写驱动核心代码 tof_irq.c
+这就是我们要写的内核模块源码。它实现了 I2C 驱动的挂载、中断的注册，以及中断触发时的响应：
+
+C
+#include <linux/module.h>
+#include <linux/i2c.h>
+#include <linux/interrupt.h>
+
+// 定义一个结构体来保存我们的设备数据
+struct tof_dev {
+    struct i2c_client *client;
+    int irq_num;
+};
+
+static struct tof_dev tof_data;
+
+// ⚡ 核心大招：中断服务函数 (ISR)
+// 当 TOF 传感器拉低 INT 引脚时，内核会瞬间打断正在运行的普通程序，跳转到这里执行！
+static irqreturn_t tof_irq_handler(int irq, void *dev_id)
+{
+    // 这里就是替代你原来死循环里 if(isReady) 的地方
+    // 只有数据真的准备好了，才会打印这句话
+    printk(KERN_INFO "🎯 捕捉到 TOF 硬件中断触发！数据已就绪！\n");
+    
+    // 注意：在实际项目里，通常在这里释放一个信号量或等待队列，唤醒应用层去读取 I2C 数据
+    return IRQ_HANDLED;
+}
+
+// 驱动与设备树匹配成功后，内核会自动调用 probe 函数
+static int tof_probe(struct i2c_client *client, const struct i2c_device_id *id)
+{
+    int ret;
+    
+    printk(KERN_INFO "🔍 匹配到 TOF 传感器设备树节点！I2C 地址: 0x%x\n", client->addr);
+
+    tof_data.client = client;
+
+    // 享受内核红利：I2C 子系统已经帮我们解析好了设备树里的 interrupts 节点
+    tof_data.irq_num = client->irq;
+    
+    if (tof_data.irq_num <= 0) {
+        printk(KERN_ERR "❌ 未能在设备树中找到有效的中断号!\n");
+        return -EINVAL;
+    }
+    
+    printk(KERN_INFO "✅ 成功获取系统分配的虚拟中断号: %d\n", tof_data.irq_num);
+
+    // 向内核注册中断，申请独占这个中断号
+    ret = request_irq(tof_data.irq_num,
+                      tof_irq_handler,
+                      IRQF_TRIGGER_FALLING,  // 对应你在设备树里写的下降沿触发
+                      "tof_interrupt",       // 名字，之后可以在 /proc/interrupts 里看到
+                      &tof_data);
+    if (ret) {
+        printk(KERN_ERR "❌ 注册 TOF 中断失败: %d\n", ret);
+        return ret;
+    }
+
+    printk(KERN_INFO "🚀 TOF 中断驱动加载成功，坐等传感器发信号...\n");
+    return 0;
+}
+
+// 驱动卸载时调用
+static int tof_remove(struct i2c_client *client)
+{
+    // 归还中断号给系统
+    free_irq(tof_data.irq_num, &tof_data);
+    printk(KERN_INFO "👋 TOF 中断驱动已安全卸载。\n");
+    return 0;
+}
+
+// 🔑 设备树匹配表 (暗号必须和设备树里写的 compatible 完全一致)
+static const struct of_device_id tof_of_match[] = {
+    { .compatible = "alientek,tof-sensor" },
+    { /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, tof_of_match);
+
+// 定义一个标准 I2C 驱动结构体
+static struct i2c_driver tof_driver = {
+    .driver = {
+        .name = "tof-sensor",
+        .of_match_table = tof_of_match,
+    },
+    .probe = tof_probe,
+    .remove = tof_remove,
+};
+
+// 一键注册 I2C 驱动的宏
+module_i2c_driver(tof_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Xiaoyang");
+MODULE_DESCRIPTION("TOF Sensor Interrupt Driver");
+🛠️ 2. 编写独立编译的 Makefile
+内核模块的编译和普通的 C++ 应用程序完全不同，它必须借助内核的源码树来编译自己。请在 04 目录下新建 Makefile（注意缩进必须是 Tab 键）：
+
+
+# 指向内核源码目录
+KERNELDIR := /home/alientek/RK3568/SDK/linux/rk3568_linux_sdk/kernel
+CURRENT_PATH := $(shell pwd)
+
+# 💥 核心：指定目标架构为 arm64，并指定正点原子的交叉编译器前缀
+ARCH ?= arm64
+CROSS_COMPILE ?= /opt/atk-dlrk356x-toolchain/bin/aarch64-buildroot-linux-gnu-
+
+obj-m := tof_irq.o
+
+build: kernel_modules
+
+kernel_modules:
+	$(MAKE) -C $(KERNELDIR) M=$(CURRENT_PATH) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
+
+clean:
+	$(MAKE) -C $(KERNELDIR) M=$(CURRENT_PATH) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) clean
+
+
+
+把这两个文件建好之后，直接在你的 Ubuntu 虚拟机 04 目录下执行 make。一切顺利的话，你会得到一个绿油油的 tof_irq.ko 内核驱动模块文件。
+
+
+
+
+
+
+
+
+
+看着终端里的 LD [M] /home/alientek/nfs/yinshipin/04/tof_irq.ko，绿油油的成功编译提示，这说明我们刚才补上的 ARCH=arm64 和交叉编译器参数直接把内核模块拿下了！
+
+📺 解决屏幕黑屏的小建议
+为了不影响你继续往下测中断，如果你想让屏幕快速恢复，最稳妥的办法是：
+不用重新去编整个内核，直接去正点原子的官方 SDK 固件包里找到他们出厂自带的那个原装 boot.img，用 RKDevTool 重新单刷一下 boot 分区即可（或者如果你之前用 ./build.sh 编译过，可以用 SDK 里的默认配置还原）。
+
+⚡ 激动人心的时刻：加载驱动并测试中断！
+既然 .ko 已经稳稳躺在你的 04 目录下，我们马上把它丢到开发板上，看看能不能和我们刚才写的设备树完美握手。
+
+请在开发板（板子端） 的终端里执行：
+
+1. 进入 NFS 的 04 目录
+
+Bash
+cd /mnt/nfs/yinshipin/04
+2. 动态加载内核驱动模块
+
+Bash
+insmod tof_irq.ko
+3. 查看内核打印日志 (dmesg)
+加载后立刻敲下下面这行命令，看看内核里有没有打印出我们写好的 probe 成功日志：
+
+Bash
+dmesg | tail -n 10
+如果屏幕上成功打印出了：
+
+🔍 匹配到 TOF 传感器设备树节点！
+✅ 成功获取系统分配的虚拟中断号...
+🚀 TOF 中断驱动加载成功...
+
+那就说明你的设备树、引脚、I2C 匹配和中断注册在内核里全线通车了！
+你现在可以拿个杜邦线轻轻碰一下板子上的 GPIO0_B3 引脚（或者触发你的 TOF 传感器），看看终端会不会实时吐出 🎯 捕捉到 TOF 硬件中断触发！ 的日志。
+
+
+
+
+
+
+  
+
+
+
+root@alientek-virtual-machine:/home/alientek/nfs/yinshipin/04# insmod tof_irq.ko
+insmod: ERROR: could not insert module tof_irq.ko: Invalid module format
+root@alientek-virtual-machine:/home/alientek/nfs/yinshipin/04# 
+
+
+
+
+
+看到这个 Invalid module format（无效的模块格式）报错，千万别慌，老手遇到这个错误简直像吃饭一样频繁！
+
+🔍 为什么会报 Invalid module format？
+这个报错的意思是：你现在用 insmod 往开发板里插的这个 .ko 文件，和板子当前正在运行的内核版本“对不上号”。
+原因很戏剧性：
+刚才我们重新编译内核的时候，虽然生成了新的内核模块（.ko），但由于我们没有把新编译的整个内核（Image/zImage）彻底烧进板子里，导致开发板现在运行的还是它原本自带的“老内核”，而你刚刚用 make 编译出来的 .ko 却是基于“新内核”源码生成的。
+Linux 内核对模块的校验极其严格，只要内核版本号或编译签名有一点点出入，就会冷酷地拒绝加载并抛出这个错。
+
+🛠️ 怎么解决？（两种方案任选其一）
+方案一：让模块编译彻底迎合当前板子的内核（推荐，最省事）
+如果你不想重新刷内核镜像，只需要把源码目录里的内核版本配置更新，或者直接在编译时指定正确的内核源码树：
+最稳妥的办法是，在编译 tof_irq.ko 之前，先在 Ubuntu 的内核目录下重新执行一次配置和编译准备，确保生成的符号版本（Module.symvers）和板子完全一致。
+不过，既然我们刚才已经用 ./build.sh kernel 把内核和设备树全套重新编译了一遍，为什么不干脆把新编译出来的内核也顺便烧进板子里呢？这样就完美统一了！
+
+方案二：把新编译的内核和模块整体烧进板子（彻底根治）
+只要你把刚才编译出来的内核镜像（通常在 kernel/arch/arm64/boot/Image）和生成的驱动模块完整更新到板子中，它们就会处于绝对的“同频共振”状态。
+
+你现在可以先在开发板上查看一下当前内核的版本号：
+
+Bash
+uname -r
+然后在 Ubuntu 的内核源码目录下输入：
+
+Bash
+make kernelversion
+对比一下这两个版本号是不是一模一样。如果不一样，这就是导致 Invalid module format 的元凶！
+
+
+
+
+
+
+alientek@alientek-virtual-machine:~/RK3568/SDK/linux/rk3568_linux_sdk/kernel$ make kernelversion
+4.19.232
+
+root@ATK-DLRK3568:/# uname -r
+4.19.232
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
