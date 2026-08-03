@@ -526,6 +526,288 @@ root@ATK-DLRK3568:/# uname -r
 
 
 
+你发来的这段 &pinctrl 代码修改得非常完美！tof_sensor 被正确地放置在了独立的作用域内，与 cam、lcd 等节点平级，语法和层级都挑不出任何毛病。
+
+既然我们决定死磕设备树，为了既能让 TOF 中断生效，又不把屏幕和 WiFi 搞丢，你需要按照正点原子 SDK 的规范流程来编译内核。
+
+请严格执行以下三步闭环：
+
+🛠️ 第一步：配置正确的屏幕参数并编译（保住屏幕和 WiFi）
+之前屏幕黑掉，是因为直接 build.sh kernel 用了默认的“无头”配置。这次我们要先告诉 SDK 你的硬件环境。
+
+在 Ubuntu 的 SDK 根目录（/home/alientek/RK3568/SDK/linux/rk3568_linux_sdk/）下操作：
+
+1. 选择板子和屏幕配置
+执行环境选择命令：
+
+Bash
+./build.sh lunch
+这时终端会弹出一个带编号的菜单，列出各种屏幕组合（比如 MIPI屏、LVDS屏 等）。请务必输入对应你手头那块物理屏幕型号的编号，然后回车。
+
+2. 安全编译内核
+配置选好后，再次执行内核编译：
+
+Bash
+./build.sh kernel
+这次生成的 boot.img 就既包含了你的 TOF 中断树节点，又包含了正确的 LCD 显示和 WiFi 驱动！
+
+⚡ 第二步：烧录并验证设备树
+把新生成的 boot.img 用 RKDevTool 烧录进开发板（仅勾选 boot 分区）。
+
+板子重启后，屏幕和 WiFi 肯定会满血复活。
+
+打开开发板的串口终端，输入我们的老朋友：
+
+Bash
+find /proc/device-tree/ -name "tof_sensor"
+find /proc/device-tree/ -name "vl53l8cx@29"
+只要这次终端输出了具体的路径，就证明内核彻底吞下了你的设备树！
+
+💻 第三步：用匹配设备树的驱动代码测试
+既然设备树通了，你 04 目录下的 tof_irq.c 就不需要用那个硬编码引脚的“路线 B”代码了。
+
+请把 tof_irq.c 换回我最初给你写的“通过 I2C client 自动获取中断号”的版本（即包含 tof_probe、of_device_id 匹配表的那一版）。
+
+在 Ubuntu 里执行 make 编译出新的 tof_irq.ko。
+
+在开发板挂载 NFS，执行：
+
+Bash
+insmod tof_irq.ko
+查看 dmesg | tail -n 10。
+
+只要看到 🚀 TOF 中断驱动加载成功，你就可以用手遮挡一下传感器，看看是否能丝滑地触发中断打印！快去跑一遍这个终极闭环流程。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+alientek@alientek-virtual-machine:~/RK3568/SDK/linux/rk3568_linux_sdk$ ./build.sh lunch
+processing option: lunch
+
+You're building on Linux
+Lunch menu...pick a combo:
+
+0. default BoardConfig.mk
+1. BoardConfig-rk3566-evb2-lp4x-v10-32bit.mk
+2. BoardConfig-rk3566-evb2-lp4x-v10.mk
+3. BoardConfig-rk3568-atk-atompi-ca1.mk
+4. BoardConfig-rk3568-atk-evb1-ddr4-v10.mk
+5. BoardConfig-rk3568-evb1-ddr4-v10-32bit.mk
+6. BoardConfig-rk3568-evb1-ddr4-v10-spi-nor-64M.mk
+7. BoardConfig-rk3568-evb1-ddr4-v10.mk
+8. BoardConfig-rk3568-nvr-spi-nand.mk
+9. BoardConfig-rk3568-nvr.mk
+10. BoardConfig-rk3568-uvc-evb1-ddr4-v10.mk
+11. BoardConfig.mk
+Which would you like? [0]: 
+我用的是买的正点原子配套的，我也不知道。既然要重新编译，我建议你看看说明书。
+
+
+
+
+
+根据手册《4.3 SDK 全自动编译》章节的说明，ATK-DLRK3568 开发板对应的板级配置文件是 BoardConfig-rk3568-atk-evb1-ddr4-v10.mk。 
+仔细看你终端输出的列表，这个配置文件对应的是 序号 4。所以你在这里输入 4 然后回车就可以了。
+另外，手册里有一段非常贴心的“特别注意”，正好命中了你现在的情况：特别注意!由于SDK更新,有可能 BoardConfig-rk3568-atk-evb1-ddr4-v10.mk这个配置的编号不是序号3!!!!!!
+所以建议使用 ./build.sh BoardConfig-rk3568-atk-evb1-ddr4-v10.mk。
+这样就不用管序号了!  为了避免以后 SDK 更新导致序号再次变动（比如手册截图里它是 3，到你这里就变成 4 了），
+我强烈建议你直接按 Ctrl+C 退出当前的 lunch 菜单，直接运行手册推荐的这条“绝对不会选错”的命令：Bash./build.sh BoardConfig-rk3568-atk-evb1-ddr4-v10.mk
+
+用这条命令把板子配置选好后，你再按我们之前说的去跑 ./build.sh kernel。这样编译出来的新 boot.img 就会完美包含你的屏幕和 WiFi 驱动了！快去配置吧！
+
+
+
+root@ATK-DLRK3568:~# find /proc/device-tree/ -name "tof_sensor"
+/proc/device-tree/pinctrl/tof_sensor
+root@ATK-DLRK3568:~# find /proc/device-tree/ -name "vl53l8cx@29"
+/proc/device-tree/i2c@fe5c0000/vl53l8cx@29
+对了都好啦，谢谢
+
+
+
+
+
+
+
+
+
+看到终端里这两行清晰的路径，简直比中彩票还让人激动：
+/proc/device-tree/pinctrl/tof_sensor
+/proc/device-tree/i2c@fe5c0000/vl53l8cx@29
+这不仅证明你的设备树代码一字不差地融进了 Linux 内核，还说明你的 I2C 节点和 GPIO 中断引脚已经成功牵手！
+而且 NFS 挂载成功，说明屏幕和网络（WiFi）也满血复活了。这波“刷机抢救 + 规范化编译”的极限操作干得非常漂亮！
+
+
+
+
+
+root@ATK-DLRK3568:~# cd /mnt/nfs/yinshipin/04
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04# insmod tof_irq.ko
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04#
+^C
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04# dmesg | tail -n 10
+[   77.281523] rtk_btcoex: Close BTCOEX
+[   77.281572] rtk_btcoex: -x
+[   79.572948] rtk_btcoex: Open BTCOEX
+[   79.574898] rtk_btcoex: BTCOEX hci_rev 0xddb7
+[   79.574924] rtk_btcoex: BTCOEX lmp_subver 0x43b1
+[  428.059692] rockchip-pinctrl pinctrl: pin gpio0-11 already requested by fe5a0000.i2c; cannot claim for 3-0029
+[  428.059732] rockchip-pinctrl pinctrl: pin-11 (3-0029) status -22
+[  428.059744] rockchip-pinctrl pinctrl: could not request pin 11 (gpio0-11) from group tof-int-pin  on device rockchip-pinctrl
+[  428.059754] tof-sensor 3-0029: Error applying setting, reverse things back
+[  428.059782] tof-sensor: probe of 3-0029 failed with error -22
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04#
+
+
+
+
+看到这段内核日志，真相彻底大白了！你的驱动代码写得非常完美，设备树语法也挑不出任何毛病，真正导致驱动加载失败的原因是硬件引脚复用（Pin Multiplexing）冲突。
+
+🕵️ 案情分析：引脚的“一女二嫁”
+在日志中，最致命也是最核心的报错是这几句：
+
+rockchip-pinctrl pinctrl: pin gpio0-11 already requested by fe5a0000.i2c; cannot claim for 3-0029
+tof-sensor: probe of 3-0029 failed with error -22
+
+gpio0-11：正是你配置的 GPIO0_B3（在底层寄存器中，引脚编号计算公式为 0×32 + 1×8 + 3 = 11）。
+
+fe5a0000.i2c：这是 RK3568 芯片中 I2C1 控制器 的物理内存地址。
+
+根本原因：在正点原子原厂的默认设备树配置里，GPIO0_B3 这个物理引脚已经被分配给了 I2C1 总线（作为 i2c1_sda 或 i2c1_scl 复用功能）。
+当内核启动时，I2C1 驱动先一步“霸占”了这个引脚。随后你用 insmod 加载 TOF 驱动，试图通过 tof-int-pin 把这个引脚切换回普通 GPIO 模式并申请中断时，Linux 严谨的 pinctrl（引脚控制子系统）发现了冲突，果断拒绝了你的请求（抛出 -22，即 -EINVAL 参数无效错误），直接导致驱动的 probe 探测流程失败并回滚（reverse things back）。
+晓阳，我明白你的心情。你确实没有占用 P0_B3（GPIO0_B3），但在 瑞芯微原厂的代码（或者说系统默认配置） 中，它已经被征用了！你看你发来的《03驱动开发指南》 的第101页和第141页。
+在RK3568的设备树（rk3568.dtsi）中，&i2c1 是默认存在的。而在 RK3568 的硬件设计里，I2C1 的 SDA 和 SCL 引脚对应的物理管脚恰恰就是 GPIO0_B3 和 GPIO0_B4！  所以，虽然“你”没有用，但“系统默认”把这个引脚留给了 I2C1 控制器，导致你申请时报错 -22（引脚冲突）。
+
+
+🛠️ 解决办法
+要让中断驱动顺利运行，必须消除这个冲突。你有两种做法（任选其一修改设备树即可）：
+
+做法一：直接禁用竞争对手（屏蔽 I2C1）
+如果你确定 ATK 开发板目前的业务逻辑里没有使用到 I2C1 总线（它通常只是扩展排针上的备用接口），最简单粗暴的办法就是直接在设备树里把它关掉，强制释放 GPIO0_B3。
+
+打开你的 rk3568-atk-evb1-ddr4-v10.dtsi，直接在文件的最末尾（跟你加的 &i2c3 平级的地方）追加这段代码：
+
+DTS
+/* 强制禁用 I2C1，释放被占用的 GPIO0_B3 给 TOF 中断使用 */
+&i2c1 {
+    status = "disabled";
+};
+做法二：更换为真正的空闲引脚（推荐）
+如果你不想影响官方现有的外设拓扑，最优雅的做法是把物理的 TOF 模块 INT 杜邦线拔下来，插到扩展排针上一个真正空闲、未被复用的普通 GPIO 上。
+
+假设你查阅开发板丝印，将 INT 线插到了 GPIO3_A4，那么你只需要修改设备树里的两处数字：
+
+DTS
+	tof_sensor {
+		tof_int_pin: tof-int-pin {
+			/* 修改为新引脚，例如 GPIO3_A4 */
+			rockchip,pins = <3 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+&i2c3 {
+	status = "okay";
+	vl53l8cx@29 {
+		compatible = "alientek,tof-sensor";
+		reg = <0x29>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tof_int_pin>;
+		
+		/* 同步修改中断管家和引脚 */
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PA4 IRQ_TYPE_EDGE_FALLING>; 
+	};
+};
+不论你选择哪种做法，修改保存好设备树后，在 Ubuntu 中重新执行一次 ./build.sh kernel 编译，把新生成的 boot.img 单刷进开发板。
+刷完重启后再执行 insmod tof_irq.ko，引脚冲突的报错就会彻底消失，你的中断驱动就能正常捕捉数据了。
+
+
+
+终极解决步骤：彻底修改设备树为 P3_A1
+既然你坚持走设备树路线，我们就必须把设备树里的 GPIO0_B3 彻底铲除，换成我们刚才挑好的、干干净净的 P3_A1 (GPIO3_A1)。
+
+请回到 Ubuntu 系统，打开你的 rk3568-atk-evb1-ddr4-v10.dtsi 文件，将这两处修改为以下内容（注意看注释里的修改点）：
+
+第一处修改：更改引脚复用节点
+
+DTS
+	tof_sensor {
+		tof_int_pin: tof-int-pin {
+			/* 将引脚换成 P3_A1 (即 GPIO3_A1) */
+			rockchip,pins = <3 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+第二处修改：更改 I2C 设备节点里的中断管家
+
+DTS
+&i2c3 {
+	status = "okay";
+
+	vl53l8cx@29 {
+		compatible = "alientek,tof-sensor";
+		reg = <0x29>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tof_int_pin>;
+
+		/* 💥 核心修改：管家换成 gpio3，引脚换成 RK_PA1 */
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PA1 IRQ_TYPE_EDGE_FALLING>; 
+	};
+};
+🚀 最后的通关冲刺
+编译并烧录：修改好 .dtsi 文件后，在 SDK 根目录下执行 ./build.sh kernel。把新生成的 boot.img 单刷进板子。
+
+插好杜邦线：把 TOF 的 INT 引脚杜邦线拔下来，稳稳地插在开发板物理排针的 P3_A1 上。
+
+加载驱动：板子重启后，进入 NFS 目录，执行：
+
+Bash
+rmmod tof_irq  # 如果原来有就先卸载
+insmod tof_irq.ko
+dmesg | tail -n 10
+换到 P3_A1 这个风水宝地，冲突必定烟消云散，中断日志绝对能如约而至！
+
+
+
+
+
+
+
+
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04# ls
+Makefile  modules.order  Module.symvers  tof_irq.c  tof_irq.ko  tof_irq.mod.c  tof_irq.mod.o  tof_irq.o
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04# rmmod tof_irq
+rmmod: ERROR: Module tof_irq is not currently loaded
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04# insmod tof_irq.ko
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04#
+^C
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04# dmesg | tail -n 10
+[   29.190749] [BT_RFKILL]: bt turn on power
+[   29.190777] [BT_RFKILL]: Request irq for bt wakeup host
+[   29.190827] [BT_RFKILL]: ** disable irq
+[   29.722991] IPv6: ADDRCONF(NETDEV_UP): wlan0: link is not ready
+[   30.357661] IPv6: ADDRCONF(NETDEV_CHANGE): wlan0: link becomes ready
+[   33.760885] vcc3v3_pcie: disabling
+[  121.739736] tof_irq: loading out-of-tree module taints kernel.
+[  121.740642] 🔍 匹配到 TOF 传感器设备树节点！I2C 地址: 0x29
+[  121.740725] ✅ 成功获取系统分配的虚拟中断号: 116
+[  121.740787] 🚀 TOF 中断驱动加载成功，坐等传感器发信号...
+root@ATK-DLRK3568:/mnt/nfs/yinshipin/04#
+
+
 
 
 
